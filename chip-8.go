@@ -19,7 +19,7 @@ type Cpu struct {
 	I, PC, Opcode uint16
 }
 
-const TimerFreq = 120
+const TimerFreq = 240
 const GfxScale = 10
 
 var keyMap = map[int]byte{
@@ -44,7 +44,7 @@ var keyMap = map[int]byte{
 func main() {
 	c := Cpu{}
 	c.init()
-	c.loadRom("games/brix")
+	c.loadRom("games/pong")
 
 	err := sdl.Init(sdl.INIT_VIDEO)
 	if err != nil {
@@ -86,6 +86,7 @@ func main() {
 
 func (c *Cpu) init() {
 	c.PC = 0x200
+	c.Draw = true
 
 	font := [80]uint8{
 		0xf0, 0x90, 0x90, 0x90, 0xf0, 0x20, 0x60, 0x20, 0x20, 0x70,
@@ -99,7 +100,7 @@ func (c *Cpu) init() {
 	}
 
 	for i, v := range font {
-		c.Mem[0x50+i] = v
+		c.Mem[i] = v
 	}
 }
 
@@ -127,11 +128,12 @@ func (c *Cpu) emulateCycle() {
 		case 0x00ee:
 			c.SP--
 			c.PC = c.Stack[c.SP]
+			c.PC += 2
 		}
 	case 0x1000:
 		c.PC = c.Opcode & 0x0fff
 	case 0x2000:
-		c.Stack[c.SP] = c.PC + 2
+		c.Stack[c.SP] = c.PC
 		c.SP++
 		c.PC = c.Opcode & 0x0fff
 	case 0x3000:
@@ -152,7 +154,7 @@ func (c *Cpu) emulateCycle() {
 		} else {
 			c.PC += 2
 		}
-	case 0x6000: // OK
+	case 0x6000:
 		c.V[c.Opcode&0x0f00>>8] = uint8(c.Opcode & 0x00ff)
 		c.PC += 2
 	case 0x7000:
@@ -164,16 +166,16 @@ func (c *Cpu) emulateCycle() {
 			c.V[c.Opcode&0x0f00>>8] = c.V[c.Opcode&0x00f0>>4]
 			c.PC += 2
 		case 0x0001:
-			c.V[c.Opcode&0x0f00>>8] = c.V[c.Opcode&0x0f00>>8] | c.V[c.Opcode&0x00f0>>4]
+			c.V[c.Opcode&0x0f00>>8] |= c.V[c.Opcode&0x00f0>>4]
 			c.PC += 2
 		case 0x0002:
-			c.V[c.Opcode&0x0f00>>8] = c.V[c.Opcode&0x0f00>>8] & c.V[c.Opcode&0x00f0>>4]
+			c.V[c.Opcode&0x0f00>>8] &= c.V[c.Opcode&0x00f0>>4]
 			c.PC += 2
 		case 0x0003:
-			c.V[c.Opcode&0x0f00>>8] = c.V[c.Opcode&0x0f00>>8] ^ c.V[c.Opcode&0x00f0>>4]
+			c.V[c.Opcode&0x0f00>>8] ^= c.V[c.Opcode&0x00f0>>4]
 			c.PC += 2
 		case 0x0004:
-			if c.V[c.Opcode&0x00f0>>4] > 0xff-c.V[c.Opcode&0x0f00>>8] {
+			if c.V[c.Opcode&0x00f0>>4] > (0xff-c.V[c.Opcode&0x0f00>>8]) {
 				c.V[0xf] = 1
 			} else {
 				c.V[0xf] = 0
@@ -189,7 +191,7 @@ func (c *Cpu) emulateCycle() {
 			c.V[c.Opcode&0x0f00>>8] -= c.V[c.Opcode&0x00f0>>4]
 			c.PC += 2
 		case 0x0006:
-			c.V[0xf] = c.V[c.Opcode&0x0f00>>8] & 1
+			c.V[0xf] = c.V[c.Opcode&0x0f00>>8] & 0x1
 			c.V[c.Opcode&0x0f00>>8] >>= 1
 			c.PC += 2
 		case 0x0007:
@@ -201,7 +203,7 @@ func (c *Cpu) emulateCycle() {
 			c.V[c.Opcode&0x0f00>>8] = c.V[c.Opcode&0x00f0>>4] - c.V[c.Opcode&0x0f00>>8]
 			c.PC += 2
 		case 0x000e:
-			c.V[0xf] = c.V[c.Opcode&0x0f00>>8] & 0x80
+			c.V[0xf] = c.V[c.Opcode&0x0f00>>8] >> 7 //& 0x80
 			c.V[c.Opcode&0x0f00>>8] <<= 1
 			c.PC += 2
 		}
@@ -217,7 +219,7 @@ func (c *Cpu) emulateCycle() {
 	case 0xb000:
 		c.PC = c.Opcode&0x0fff + uint16(c.V[0])
 	case 0xc000:
-		c.V[c.Opcode&0x0f00>>8] = uint8(uint16(rand.Int()) & (c.Opcode & 0x00ff))
+		c.V[c.Opcode&0x0f00>>8] = uint8(uint16(rand.Int() % 0xff) & (c.Opcode & 0x00ff))
 		c.PC += 2
 	case 0xd000:
 		height := uint8(c.Opcode & 0x000f)
@@ -242,7 +244,7 @@ func (c *Cpu) emulateCycle() {
 	case 0xe000:
 		switch c.Opcode & 0x00ff {
 		case 0x009e:
-			if c.Keys[c.Opcode&0x0f00>>8] {
+			if c.Keys[c.V[c.Opcode&0x0f00>>8]] {
 				c.PC += 4
 			} else {
 				c.PC += 2
@@ -269,25 +271,32 @@ func (c *Cpu) emulateCycle() {
 			c.ST = c.V[c.Opcode&0x0f00>>8]
 			c.PC += 2
 		case 0x001e:
+			if (c.I + uint16(c.V[c.Opcode&0x0f00>>4])) > 0xfff {
+				c.V[0xf] = 1
+			} else {
+				c.V[0xf] = 0
+			}
 			c.I += uint16(c.V[c.Opcode&0x0f00>>8])
 			c.PC += 2
 		case 0x0029:
-			c.I = 0x000 + (c.Opcode & 0x0f00 >> 8)
+			c.I = 0x05 * (c.Opcode & 0x0f00 >> 8)
 			c.PC += 2
 		case 0x0033:
-			c.Mem[c.I] = c.V[c.Opcode&0x0f00>>8] / 100 % 10
-			c.Mem[c.I+1] = c.V[c.Opcode&0x0f00>>8] / 10 % 10
-			c.Mem[c.I+2] = c.V[c.Opcode&0x0f00>>8] % 10
+			c.Mem[c.I] = c.V[c.Opcode&0x0f00>>8] / 100
+			c.Mem[c.I+1] = (c.V[c.Opcode&0x0f00>>8] / 10) % 10
+			c.Mem[c.I+2] = (c.V[c.Opcode&0x0f00>>8] % 100) % 10
 			c.PC += 2
 		case 0x0055:
-			for i := 0; i <= 8; i++ {
-				c.Mem[i] = c.V[i]
+			for i := uint16(0); i <= (c.Opcode&0x0f00 >> 8); i++ {
+				c.Mem[i + i] = c.V[i]
 			}
+			c.I += (c.Opcode & 0x0f00 >> 8) + 1
 			c.PC += 2
 		case 0x0065:
-			for i := 0; i <= 8; i++ {
-				c.Mem[i] = c.V[i]
+			for i := uint16(0); i <= (c.Opcode&0x0f00 >> 8); i++ {
+				c.V[i] = c.Mem[c.I + i]
 			}
+			c.I += (c.Opcode&0x0f00 >> 8) + 1
 			c.PC += 2
 		}
 	}
