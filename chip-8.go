@@ -19,8 +19,12 @@ type Cpu struct {
 	I, PC, Opcode uint16
 }
 
-const TimerFreq = 240
-const GfxScale = 10
+const (
+	TimerFreq = 240
+	GfxScale = 10
+	screenWidth = 64
+	screenHeight = 32
+)
 
 var keyMap = map[int]byte{
 	30: 0x1, // 1
@@ -56,8 +60,8 @@ func main() {
 		"Test",
 		sdl.WINDOWPOS_UNDEFINED,
 		sdl.WINDOWPOS_UNDEFINED,
-		64*GfxScale,
-		32*GfxScale,
+		screenWidth*GfxScale,
+		screenHeight*GfxScale,
 		sdl.WINDOW_SHOWN,
 	)
 	if err != nil {
@@ -86,7 +90,6 @@ func main() {
 
 func (c *Cpu) init() {
 	c.PC = 0x200
-	c.Draw = true
 
 	font := [80]uint8{
 		0xf0, 0x90, 0x90, 0x90, 0xf0, 0x20, 0x60, 0x20, 0x20, 0x70,
@@ -231,10 +234,10 @@ func (c *Cpu) emulateCycle() {
 			pixel := c.Mem[c.I+uint16(yline)]
 			for xline := uint16(0); xline < 8; xline++ {
 				if (pixel & (0x80 >> xline)) != 0 {
-					if c.Gfx[uint16(x)+xline+((uint16(y)+yline)*64)] == 1 {
+					if c.Gfx[uint16(x)+xline+((uint16(y)+yline)*screenWidth)] == 1 {
 						c.V[0xf] = 1
 					}
-					c.Gfx[uint16(x)+xline+((uint16(y)+yline)*64)] ^= 1
+					c.Gfx[uint16(x)+xline+((uint16(y)+yline)*screenWidth)] ^= 1
 				}
 			}
 		}
@@ -262,8 +265,7 @@ func (c *Cpu) emulateCycle() {
 			c.V[c.Opcode&0x0f00>>8] = c.DT
 			c.PC += 2
 		case 0x000a:
-			// TODO: implement me
-			c.PC += 2
+			panic("Not implemented")
 		case 0x0015:
 			c.DT = c.V[c.Opcode&0x0f00>>8]
 			c.PC += 2
@@ -303,9 +305,9 @@ func (c *Cpu) emulateCycle() {
 }
 
 func (c *Cpu) updateScreen(ren *sdl.Renderer) {
-	for k := 0; k < 32; k++ {
-		for l := 0; l < 64; l++ {
-			if c.Gfx[(l+(k*64))] == 1 {
+	for k := 0; k < screenHeight; k++ {
+		for l := 0; l < screenWidth; l++ {
+			if c.Gfx[(l+(k*screenWidth))] == 1 {
 				ren.FillRect(&sdl.Rect{int32(l) * GfxScale, int32(k) * GfxScale, GfxScale, GfxScale})
 			}
 		}
